@@ -1,0 +1,137 @@
+#Creation of Database
+CREATE DATABASE library;
+
+#Creation of author table which holds information about author's name & No of Books
+CREATE TABLE author(
+    author_id INT PRIMARY KEY,
+    author_name VARCHAR(30),
+    published_books INT
+);
+
+#Creation of books table 
+CREATE TABLE books(
+    book_id INT PRIMARY KEY,
+    title VARCHAR(30),
+    author_id INT,
+    genre VARCHAR(30),
+    published_year DATE,
+    FOREIGN KEY(author_id) REFERENCES author(author_id)
+);
+
+#Creation of bookCopies table which holds the whether a book's copy exists or not 
+CREATE TABLE bookCopies(
+    copy_id INT PRIMARY KEY,
+    book_id INT,
+    available BOOLEAN,
+    FOREIGN KEY(book_id) REFERENCES books(book_id) ON DELETE CASCADE
+);
+
+#Creation of Table members which holds the information about library memebers
+CREATE TABLE members(
+    member_id INT PRIMARY KEY,
+    name VARCHAR(30),
+    email VARCHAR(30),
+    joined_date DATE
+);
+
+#Creation of table borrowings which holds the information about who borrowed the book and other details 
+CREATE TABLE borrowings(
+    borrow_id INT PRIMARY KEY,
+    member_id INT,
+    copy_id INT,
+    borrow_date DATE,
+    return_date DATE,
+    FOREIGN KEY(member_id) REFERENCES members(member_id),
+    FOREIGN KEY(copy_id) REFERENCES bookCopies(copy_id) ON DELETE CASCADE
+);
+
+#Creation of trigger requires changing delimiter thus changing delimiter from ; to $$ and after finishing the process we again change it into ; 
+DELIMITER $$
+
+#Whenever a data is inserted into borrowings it changes available into FALSE based on the copy_id;
+CREATE TRIGGER unavailability 
+AFTER INSERT ON borrowings 
+FOR EACH ROW 
+BEGIN
+  UPDATE bookCopies 
+  SET available = FALSE 
+  WHERE copy_id = NEW.copy_id;
+END$$
+
+#Whenever a availability of book_id is modified into true the corresponding borrowing record will be given a return date
+CREATE TRIGGER availability
+AFTER UPDATE ON bookCopies
+FOR EACH ROW
+BEGIN
+  IF NEW.available = TRUE THEN
+    UPDATE borrowings
+    SET return_date = CURRENT_DATE()
+    WHERE copy_id = NEW.copy_id AND return_date IS NULL;
+  END IF;
+END$$
+
+DELIMITER ;
+
+
+#DATA FOR INSERTION:
+
+INSERT INTO author VALUES
+(1, 'J.K. Rowling', 7),
+(2, 'George Orwell', 4),
+(3, 'Jane Austen', 6);
+
+INSERT INTO books VALUES
+(101, 'Harry Potter', 1, 'Fantasy', '1997-06-26'),
+(102, '1984', 2, 'Dystopian', '1949-06-08'),
+(103, 'Pride and Prejudice', 3, 'Romance', '1813-01-28');
+
+INSERT INTO bookCopies VALUES
+(1001, 101, TRUE),
+(1002, 101, TRUE),
+(1003, 102, TRUE),
+(1004, 103, TRUE),
+(1005, 103, TRUE);
+
+INSERT INTO members VALUES
+(201, 'Alice', 'alice@example.com', '2023-01-01'),
+(202, 'Bob', 'bob@example.com', '2022-09-15'),
+(203, 'Charlie', 'charlie@example.com', '2023-05-20');
+
+INSERT INTO borrowings VALUES
+(301, 201, 1001, '2024-04-01', NULL),
+(302, 202, 1003, '2024-04-05', NULL);
+
+#For checking whether the trigger is working or not if working available will be 0
+SELECT * FROM bookCopies WHERE copy_id IN (1001, 1003);
+
+#When book is returned
+UPDATE bookCopies SET available = TRUE WHERE copy_id = 1001;
+
+#The row should have an return date
+SELECT * FROM borrowings WHERE copy_id = 1001;
+
+DELETE FROM books WHERE book_id = 101;
+
+#Should be deleted
+SELECT * FROM bookCopies WHERE book_id = 101;
+
+#Should also be gone due to cascading from bookCopies
+SELECT * FROM borrowings WHERE copy_id = 1001 OR copy_id = 1002;
+
+#Creation of View returning the noof copies available in each book
+CREATE VIEW available_books AS
+SELECT 
+    b.book_id,
+    b.title,
+    COUNT(bc.copy_id) AS available_copies
+FROM 
+    books b
+JOIN 
+    bookCopies bc ON b.book_id = bc.book_id
+WHERE 
+    bc.available = TRUE
+GROUP BY 
+    b.book_id, b.title;
+
+#To print the no of copies of each book available using available_books view
+SELECT * FROM available_books;
